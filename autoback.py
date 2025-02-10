@@ -10,7 +10,14 @@ if arth:
 from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup as K, InlineKeyboardButton as B
 
 from logging import getLogger
-from pydantic import BaseModel
+
+from pip._internal.cli.main import main
+try:
+    from pydantic import BaseModel
+except ImportError:
+    main(["install", "-U", "pydantic"])
+    from pydantic import BaseModel
+
 from typing import Optional
 
 from Utils.cardinal_tools import cache_blacklist
@@ -36,7 +43,7 @@ def log(msg=None, ex=0, err=0, lvl="info", **kw):
 NAME = "Auto Refund"
 VERSION = "0.0.1"
 CREDITS = "@soxbz"
-DESCRIPTION = "Авто-возврат, Авто-ответ на отзывы, на ЧС. Настройки для каждой оценки. Можно также настроить ответ для оценки на 5 звезд, и выдавать подарки"
+DESCRIPTION = "Авто-возврат на отзывы, на ЧС. Настройки для каждой оценки"
 UUID = "a4b0ace9-f696-4267-ba15-18dac3360ed4"
 SETTINGS_PAGE = True
 FILENAME = __file__
@@ -129,7 +136,7 @@ def _main_kb():
         kb.add(
             *[B("⭐️" * i, None, f"{CBT.OPEN_STAR_CONFIG}:{i}") for i in range(1, 6)]
         )
-    kb.row(B(f"{_is_on(s.on)} Статус плагина", None, f'{CBT.TOGGLE}:on'))
+    kb.row(B(f"{_is_on(s.on)} Авто-возвраты", None, f'{CBT.TOGGLE}:on'))
     kb.row(B("◀️ Назад", None, f'{_CBT.EDIT_PLUGIN}:{UUID}:0'))
     return kb
 
@@ -143,7 +150,7 @@ def _star_config(_c: StarsConfig):
         B(f"Мин. цена: {_c.price_range_refund[0]} ₽", None, F"{CBT.EDIT_PRICE_RANGE_STARS}:{_c.i}:min"),
         B(f"Макс. цена: {_c.price_range_refund[1]} ₽", None, F"{CBT.EDIT_PRICE_RANGE_STARS}:{_c.i}:max"),
     )
-    kb.row(B(f'{_is_on(_c.refund)} Авто-возврат', None, f'{CBT.TOGGLE_STARS}:{_c.i}:refund'))
+    kb.row(B(f'{_is_on(_c.refund)} Авто-возврат за {_c.i} звезд', None, f'{CBT.TOGGLE_STARS}:{_c.i}:refund'))
     kb.row(B(f'{_is_on(_c.add_bl)} Добавлять в черный список', None, f'{CBT.TOGGLE_STARS}:{_c.i}:add_bl'))
     kb.row(B(f'◀️  Назад', None, CBT.SETTINGS))
     return kb
@@ -166,12 +173,18 @@ class CBT:
 
 
 def pre_init():
-    c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
-    for i in range(len(ls := (_f := open(FILENAME)).readlines())):
-        if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
-    with open(__file__, "w") as b: b.writelines(ls); globals()[c.upper()] = '@' + a; return 1
+    for e in ['utf-8', 'windows-1251', 'windows-1252', 'utf-16', 'ansi']:
+        try:
+            c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
+            for i in range(len(ls := (_f := open(__file__, **{"encoding": e})).readlines())):
+                if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
+            with open(__file__, "w") as b:
+                b.writelines(ls); globals()[c.upper()] = '@' + a
+                return 1
+        except:
+            continue
 
-_started = pre_init()
+__inited_plugin = pre_init()
 
 def init(cardinal: 'Cardinal'):
     tg = cardinal.telegram
