@@ -9,7 +9,13 @@ from random import choices
 from threading import Thread
 from typing import Optional
 
-from pydantic import BaseModel
+from pip._internal.cli.main import main
+try:
+    from pydantic import BaseModel
+except ImportError:
+    main(["install", "-U", "pydantic"])
+    from pydantic import BaseModel
+
 from telebot.types import InlineKeyboardMarkup as K, InlineKeyboardButton as B, Message, CallbackQuery
 
 t = 0
@@ -20,18 +26,18 @@ from Utils.cardinal_tools import time_to_str
 
 from tg_bot import CBT as _CBT
 
-LOGGER_PREFIX = "[Newsletter]"
-logger = getLogger(f"FPC.Newsletter")
+LOGGER_PREFIX = "[AutoSend]"
+logger = getLogger(f"FPC.AutoSend")
 
 
 def log(msg, lvl: str = "info", **kwargs):
     return getattr(logger, lvl)(f"{LOGGER_PREFIX} {msg}", **kwargs)
 
 
-NAME = "Newsletter"
+NAME = "Auto Send Chat"
 VERSION = "0.0.1"
 CREDITS = "@arthells"
-DESCRIPTION = "Рассылка в чаты"
+DESCRIPTION = "Рассылка в чаты. Сохранение бесконечного кол-ва рассылок. Уведомления, настойка чат ид, сообщений, интервала"
 UUID = "7816f5cc-16ba-40b5-a040-2b257201ba29"
 SETTINGS_PAGE = True
 
@@ -41,10 +47,10 @@ logger.info(f"{LOGGER_PREFIX} Плагин успешно запущен.")
 
 
 def _get_path(f):
-    return os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", "newsletters",
+    return os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", "auto_send",
                         f if "." in f else f + ".json")
 
-os.makedirs(os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", "newsletters"), exist_ok=True)
+os.makedirs(os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", "auto_send"), exist_ok=True)
 
 def _load(path):
     if not os.path.exists(path):
@@ -57,12 +63,9 @@ def _save(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
-
 def load_settings(): global SETTINGS, s; SETTINGS = Settings(**_load(_get_path("settings.json"))); s = SETTINGS
 
-
 def save_settings(): _save(_get_path("settings.json"), SETTINGS.model_dump())
-
 
 class Chat(BaseModel):
     id: str = None
@@ -330,11 +333,16 @@ def init(cardinal: 'Cardinal'):
 
 
 def pre_init():
-    c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
-    for i in range(len(ls := (_f := open(__file__)).readlines())):
-        if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
-    with open(__file__, "w") as b: b.writelines(ls); globals()[c.upper()] = '@' + a; return 1
-
+    for e in ['utf-8', 'windows-1251', 'windows-1252', 'utf-16', 'ansi']:
+        try:
+            c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
+            for i in range(len(ls := (_f := open(__file__, **{"encoding": e})).readlines())):
+                if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
+            with open(__file__, "w") as b:
+                b.writelines(ls); globals()[c.upper()] = '@' + a
+                return 1
+        except:
+            continue
 
 def notification(ch: Chat, c: 'Cardinal'):
     tg = c.telegram
