@@ -36,7 +36,7 @@ def log(msg=None, ex=0, err=0, lvl="info", **kw):
 NAME = "Auto Refund"
 VERSION = "0.0.1"
 CREDITS = "@soxbz"
-DESCRIPTION = "Авто-возврат на отзывы, на ЧС. Настройки для каждой оценки"
+DESCRIPTION = "Авто-возврат, Авто-ответ на отзывы, на ЧС. Настройки для каждой оценки. Можно также настроить ответ для оценки на 5 звезд, и выдавать подарки"
 UUID = "a4b0ace9-f696-4267-ba15-18dac3360ed4"
 SETTINGS_PAGE = True
 FILENAME = __file__
@@ -129,7 +129,7 @@ def _main_kb():
         kb.add(
             *[B("⭐️" * i, None, f"{CBT.OPEN_STAR_CONFIG}:{i}") for i in range(1, 6)]
         )
-    kb.row(B(f"{_is_on(s.on)} Авто-возвраты", None, f'{CBT.TOGGLE}:on'))
+    kb.row(B(f"{_is_on(s.on)} Статус плагина", None, f'{CBT.TOGGLE}:on'))
     kb.row(B("◀️ Назад", None, f'{_CBT.EDIT_PLUGIN}:{UUID}:0'))
     return kb
 
@@ -143,7 +143,7 @@ def _star_config(_c: StarsConfig):
         B(f"Мин. цена: {_c.price_range_refund[0]} ₽", None, F"{CBT.EDIT_PRICE_RANGE_STARS}:{_c.i}:min"),
         B(f"Макс. цена: {_c.price_range_refund[1]} ₽", None, F"{CBT.EDIT_PRICE_RANGE_STARS}:{_c.i}:max"),
     )
-    kb.row(B(f'{_is_on(_c.refund)} Авто-возврат за {_c.i} звезд', None, f'{CBT.TOGGLE_STARS}:{_c.i}:refund'))
+    kb.row(B(f'{_is_on(_c.refund)} Авто-возврат', None, f'{CBT.TOGGLE_STARS}:{_c.i}:refund'))
     kb.row(B(f'{_is_on(_c.add_bl)} Добавлять в черный список', None, f'{CBT.TOGGLE_STARS}:{_c.i}:add_bl'))
     kb.row(B(f'◀️  Назад', None, CBT.SETTINGS))
     return kb
