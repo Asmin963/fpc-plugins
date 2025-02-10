@@ -9,4 +9,4 @@
 
 ## Автор: <a href='https://t.me/arthells'>t.me/arthells</a>
 
-## Канал: <a href='https://t.me/FPC_pluginss'>t.me/FPC_pluginss</a>
+## Больше плагинов тут: <a href='https://t.me/FPC_pluginss'>t.me/FPC_pluginss</a>
