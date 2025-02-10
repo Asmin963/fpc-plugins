@@ -1,9 +1,10 @@
 import base64
 import time
 from threading import Thread
-from typing import Union
+from typing import Union, Optional
 
 from bs4 import BeautifulSoup as bs, PageElement
+from pydantic import BaseModel
 
 t = 0
 if t:
@@ -33,13 +34,14 @@ CREDITS = "@arthells"
 SETTINGS_PAGE = True
 UUID = 'c9ca4bbf-a603-4e1a-b7b3-9c610413db74'
 NAME = 'Delete Lots'
-DESCRIPTION = 'Плагин для удаления лотов'
-VERSION = '0.0.1'
+DESCRIPTION = 'Плагин для удаления лотов. Выбор категорий, отмена удаления, сброс выбота и многое другое. Самый функциональный плагин по удалению лотов на данный момент'
+VERSION = '0.0.2'
 
 log(f"Плагин {NAME} успешно загружен")
 
+s: Optional['Settings'] = None
 
-_PARENT_FOLDER = 'delete_lots.json'
+_PARENT_FOLDER = 'delete_lots'
 _STORAGE_PATH = os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", _PARENT_FOLDER)
 
 
@@ -58,6 +60,15 @@ def _load(path):
 def _save(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
+
+def load_settings(): global s; s = Settings(**_load(_get_path('settings.json')))
+
+def save_settings(): global s; _save(_get_path('settings.json'), s.model_dump())
+
+class Settings(BaseModel):
+    only_active: bool = True
+
+load_settings()
 
 class StatesStorage:
     def __init__(self):
@@ -102,11 +113,12 @@ class CBT:
     CANCEL_DELETE_LOTS = 'cancel-del-lots'
     CLEAR = 'clear'
     UPDATE_INFO = 'UPDATE-LOTS'
+    TOGGLE = 'TOGGLE'
 
 
 def _category_list_kb(cats: list[tuple[int, str]], offset=0, max_on_page=20, del_kb=False):
     kb = K(row_width=1).add(
-        *[B(f"{(p := (' • ' if int(i) in storage.ids else ''))}{name}{p}", None,
+        *[B(f"{(p := ('✅' if int(i) in storage.ids else ''))} {name}", None,
             f"{CBT.CATEGORY_STATE}:{i}:{offset}")
           for i, name in cats[offset:offset + max_on_page]]
     )
@@ -141,6 +153,7 @@ def _categoies_text():
 
 def _main_kb():
     return K(row_width=1).add(
+        B(f"{'🟢' if s.only_active else '🔴'} Удалять только активные лоты", None, f"{CBT.TOGGLE}:only_active"),
         B("🗑 Удалить лоты", None, f"{CBT.CATEGORY_LIST}:0"),
         B('◀️ Назад', None, f"{_CBT.EDIT_PLUGIN}:{UUID}:0")
     )
@@ -175,7 +188,7 @@ def _parse_categories(c: 'C'):
         resp = c.account.method("get", f"https://funpay.com/users/{c.account.id}/", {}, {})
         _tuple = _extract_categories(resp.text)
         CATEGORIES = {url.split("/")[-2]: {"type": url.split("/")[-3], "name": name} for url, name in _tuple}
-        log(f"Parsed Categories: {CATEGORIES}")
+        # log(f"Parsed Categories: {CATEGORIES}")
     except Exception as e:
         log(f"Ошибка при парсинге категорий: {e}")
         log(debug=1)
@@ -198,7 +211,7 @@ def init(cardinal: 'C'):
         def run():
             while True:
                 _parse_categories(cardinal)
-                time.sleep(15)
+                time.sleep(120)
 
         Thread(target=run).start()
 
@@ -261,48 +274,68 @@ def init(cardinal: 'C'):
         text += f"\n\n<b>🗑 Будут удалены лоты в категориях:</b>\n"
         name_str = lambda name: f" (<code>{name}</code>)" if name else ''
         text += "\n".join([f" • <code>{_id}</code>{name_str(name)}" for _id, name in categories])
-        text += "\n\n<b>⚠️ Будут удалены даже неактивные лоты!</b>"
+        text += "\n\n<b>⚠️ Будут удалены даже неактивные лоты!</b>" if not s.only_active else ''
         bot.edit_message_text(text, c.message.chat.id, c.message.id, reply_markup=_accept_delete_lots_kb(offset))
 
-    def cancel_del_lots(_):
+    def cancel_del_lots(c: CallbackQuery):
         global DELETING_LOTS_PROCESS
         DELETING_LOTS_PROCESS = False
+        bot.edit_message_reply_markup(c.message.chat.id, c.message.id, reply_markup=None)
 
     def accept_delete_lots_kb(c: CallbackQuery):
         global DELETING_LOTS_PROCESS
-        DELETING_LOTS_PROCESS = True
+        if DELETING_LOTS_PROCESS:
+            return bot.answer_callback_query(c.id, f"Процесс удаления лотов уже начался! Отмените его, или перезагрузите бота")
         bot.delete_message(c.message.chat.id, c.message.id)
         deleted, error = 0, 0
-        lots_ids = []
-        for cat in storage.ids:
-            lots_ids += _get_lots_by_category(cardinal, cat)
+
+        try:
+            lots_ids = []
+            if not s.only_active:
+                for cat in storage.ids:
+                    lots_ids += _get_lots_by_category(cardinal, cat)
+            else:
+                lots = cardinal.account.get_user(cardinal.account.id).get_lots()
+                lots_ids = [(lot.id, lot.description) for lot in lots if lot.subcategory.id in storage.ids]
+        except Exception as e:
+            log(f"Ошибка при получении лотов: {str(e)}", err=1)
+            log(debug=1)
+            return bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при получении лотов</b>\n\n"
+                                                       f"<code>{str(e)}</code>")
+
         storage.clear()
         if not lots_ids:
             return bot.answer_callback_query(c.id, f"Не нашел товаров в этих категориях")
         res = bot.send_message(c.message.chat.id, f"🚀 <b>Начать удалять <code>{len(lots_ids)}</code> товаров...</b>",
                                reply_markup=K().add(B("🛑 Остановить", None, CBT.CANCEL_DELETE_LOTS)))
+        DELETING_LOTS_PROCESS = True
         for idx, lot in enumerate(lots_ids, start=1):
+            if isinstance(lot, tuple):
+                lot_id, name = lot
+            else:
+                lot_id, name = lot, None
+            name_postfix_log = f"Название: {name}. " if name else ''
             pr = f"[{idx}/{len(lots_ids)}]"
             if not DELETING_LOTS_PROCESS:
-                bot.edit_message_reply_markup(c.message.chat.id, res.id, reply_markup=None)
                 return bot.send_message(c.message.chat.id, f"🛑 <b>{pr} Остановил удаление лотов.\n\n"
                                           f" • Удалено: <code>{deleted}</code> шт.\n"
                                             f" • С ошибками: <code>{error}</code> шт.</b>")
             try:
-                fields = cardinal.account.get_lot_fields(lot)
+                fields = cardinal.account.get_lot_fields(lot_id)
                 fields.edit_fields({"deleted": 1})
                 cardinal.account.save_lot(fields)
             except Exception as e:
-                log(f"Ошибка при удалении лота {lot}: {str(e)}", err=1)
+                log(f"Ошибка при удалении лота {name_postfix_log}ID: {lot_id}: {str(e)}", err=1)
                 log(debug=1)
                 bot.send_message(c.message.chat.id, f"<b>❌{pr} Ошибка при удалении лота "
-                                                    f"<a href='https://funpay.com/lots/offer?id={lot}'></a></b>\n\n"
+                                                    f"<a href='https://funpay.com/lots/offer?id={lot_id}'>{name or lot_id}</a></b>\n\n"
                                                     f"<code>{str(e)[:200]}</code>")
                 error += 1
             else:
                 deleted += 1
+                log(f"Удалил лот {name_postfix_log}ID: {lot_id}")
                 bot.send_message(c.message.chat.id, f"<b>🗑 {pr} Успешно удалил лот "
-                                                    f"<a href='https://funpay.com/lots/offer?id={lot}'>{lot}</a></b>")
+                                                    f"<a href='https://funpay.com/lots/offer?id={lot_id}'>{name or lot_id}</a></b>")
             time.sleep(1)
         bot.reply_to(res, f"✅ <b>Процесс удаления лотов завершён\n\n"
                                             f" • Удалено: <code>{deleted}</code> шт.\n"
@@ -328,6 +361,12 @@ def init(cardinal: 'C'):
         except:
             bot.answer_callback_query(c.id, f"🔁 Категории обновлены!")
 
+    def toggle_settings(c: CallbackQuery):
+        p = c.data.split(":")[-1]
+        setattr(s, p, not getattr(s, p))
+        save_settings()
+        bot.edit_message_reply_markup(c.message.chat.id, c.message.id, reply_markup=_main_kb())
+
     tg.cbq_handler(open_menu, _func(start=CBT.SETTINGS))
     tg.cbq_handler(open_categories, _func(start=f"{CBT.CATEGORY_LIST}:"))
     tg.cbq_handler(add_category_state, _func(start=f"{CBT.CATEGORY_STATE}:"))
@@ -336,6 +375,7 @@ def init(cardinal: 'C'):
     tg.cbq_handler(accept_delete_lots_kb, _func(start=CBT.ACCEPT_DELETE_LOTS))
     tg.cbq_handler(clear, _func(start=CBT.CLEAR))
     tg.cbq_handler(update_cats, _func(start=f"{CBT.UPDATE_INFO}:"))
+    tg.cbq_handler(toggle_settings, _func(start=f"{CBT.TOGGLE}:"))
 
 
 
