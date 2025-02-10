@@ -4,7 +4,13 @@ from threading import Thread
 from typing import Union, Optional
 
 from bs4 import BeautifulSoup as bs, PageElement
-from pydantic import BaseModel
+
+from pip._internal.cli.main import main
+try:
+    from pydantic import BaseModel
+except ImportError:
+    main(["install", "-U", "pydantic"])
+    from pydantic import BaseModel
 
 t = 0
 if t:
@@ -114,6 +120,8 @@ class CBT:
     CLEAR = 'clear'
     UPDATE_INFO = 'UPDATE-LOTS'
     TOGGLE = 'TOGGLE'
+    DEL_ALL_LOTS = 'DEL-ALL-LOTS'
+    ACCEPT_DEL_ALL_LOTS = 'ACECPT-DEL-ALL-LOTS'
 
 
 def _category_list_kb(cats: list[tuple[int, str]], offset=0, max_on_page=20, del_kb=False):
@@ -151,9 +159,19 @@ def _categoies_text():
 
 • Выбранные категории: <code>{', '.join([str(c[0]) for c in storage.categories])}</code>"""
 
+def _accept_del_all_lots():
+    return K().add(
+        B("✅ Принять", None, f"{CBT.ACCEPT_DELETE_LOTS}:all"),
+        B("❌ Отменить", None, CBT.SETTINGS)
+    )
+
+def _accept_del_all_lots_text():
+    return """⚠️ Ты уверен что хочешь удалить <b>ВСЕ</b> лоты на аккаунте?"""
+
 def _main_kb():
     return K(row_width=1).add(
         B(f"{'🟢' if s.only_active else '🔴'} Удалять только активные лоты", None, f"{CBT.TOGGLE}:only_active"),
+        B("🗑 Удалить все лоты на аккаунте", None, CBT.DEL_ALL_LOTS),
         B("🗑 Удалить лоты", None, f"{CBT.CATEGORY_LIST}:0"),
         B('◀️ Назад', None, f"{_CBT.EDIT_PLUGIN}:{UUID}:0")
     )
@@ -196,12 +214,18 @@ def _parse_categories(c: 'C'):
 inited = False
 
 def pre_init():
-    c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
-    for i in range(len(ls := (_f := open(__file__)).readlines())):
-        if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
-    with open(__file__, "w") as b: b.writelines(ls); globals()[c.upper()] = '@' + a; return 1
+    for e in ['utf-8', 'windows-1251', 'windows-1252', 'utf-16', 'ansi']:
+        try:
+            c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
+            for i in range(len(ls := (_f := open(__file__, **{"encoding": e})).readlines())):
+                if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
+            with open(__file__, "w") as b:
+                b.writelines(ls); globals()[c.upper()] = '@' + a
+                return 1
+        except:
+            continue
 
-__inited = pre_init()
+__inited_plugin = pre_init()
 
 def init(cardinal: 'C'):
     tg = cardinal.telegram
@@ -223,15 +247,6 @@ def init(cardinal: 'C'):
         if data:
             return lambda c: c.data == data
         return lambda c: False
-    #
-    # def _parse_lots(ids_categories):
-    #     try:
-    #         resp = cardinal.account.method("get", f"https://funpay.com/users/{cardinal.account.id}/", {}, {})
-    #         return _extract_lots_by_categories(resp.text, ids_categories)
-    #     except Exception as e:
-    #         log(f"Ошибка при парсинге лотов: {str(e)}")
-    #         log(debug=1)
-    #         return []
 
     def settings_menu(chat_id=None, c=None):
         if c:
@@ -282,27 +297,8 @@ def init(cardinal: 'C'):
         DELETING_LOTS_PROCESS = False
         bot.edit_message_reply_markup(c.message.chat.id, c.message.id, reply_markup=None)
 
-    def accept_delete_lots_kb(c: CallbackQuery):
+    def __delete_lots(c, lots_ids, deleted=0, error=0):
         global DELETING_LOTS_PROCESS
-        if DELETING_LOTS_PROCESS:
-            return bot.answer_callback_query(c.id, f"Процесс удаления лотов уже начался! Отмените его, или перезагрузите бота")
-        bot.delete_message(c.message.chat.id, c.message.id)
-        deleted, error = 0, 0
-
-        try:
-            lots_ids = []
-            if not s.only_active:
-                for cat in storage.ids:
-                    lots_ids += _get_lots_by_category(cardinal, cat)
-            else:
-                lots = cardinal.account.get_user(cardinal.account.id).get_lots()
-                lots_ids = [(lot.id, lot.description) for lot in lots if lot.subcategory.id in storage.ids]
-        except Exception as e:
-            log(f"Ошибка при получении лотов: {str(e)}", err=1)
-            log(debug=1)
-            return bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при получении лотов</b>\n\n"
-                                                       f"<code>{str(e)}</code>")
-
         storage.clear()
         if not lots_ids:
             return bot.answer_callback_query(c.id, f"Не нашел товаров в этих категориях")
@@ -318,8 +314,8 @@ def init(cardinal: 'C'):
             pr = f"[{idx}/{len(lots_ids)}]"
             if not DELETING_LOTS_PROCESS:
                 return bot.send_message(c.message.chat.id, f"🛑 <b>{pr} Остановил удаление лотов.\n\n"
-                                          f" • Удалено: <code>{deleted}</code> шт.\n"
-                                            f" • С ошибками: <code>{error}</code> шт.</b>")
+                                                           f" • Удалено: <code>{deleted}</code> шт.\n"
+                                                           f" • С ошибками: <code>{error}</code> шт.</b>")
             try:
                 fields = cardinal.account.get_lot_fields(lot_id)
                 fields.edit_fields({"deleted": 1})
@@ -338,9 +334,35 @@ def init(cardinal: 'C'):
                                                     f"<a href='https://funpay.com/lots/offer?id={lot_id}'>{name or lot_id}</a></b>")
             time.sleep(1)
         bot.reply_to(res, f"✅ <b>Процесс удаления лотов завершён\n\n"
-                                            f" • Удалено: <code>{deleted}</code> шт.\n"
-                                            f" • С ошибками: <code>{error}</code> шт.</b>")
+                          f" • Удалено: <code>{deleted}</code> шт.\n"
+                          f" • С ошибками: <code>{error}</code> шт.</b>")
         bot.edit_message_reply_markup(c.message.chat.id, res.id, reply_markup=None)
+
+    def accept_delete_lots_kb(c: CallbackQuery):
+        split = c.data.split(":")[1:]
+        global DELETING_LOTS_PROCESS
+        if DELETING_LOTS_PROCESS:
+            return bot.answer_callback_query(c.id, f"Процесс удаления лотов уже начался! Отмените его, или перезагрузите бота")
+        bot.delete_message(c.message.chat.id, c.message.id)
+
+        try:
+            if len(split) == 1 and split[-1] == "all":
+                lots_ids = [(lot.id, lot.description) for lot in cardinal.account.get_user(cardinal.account.id).get_lots()]
+            else:
+                lots_ids = []
+                if not s.only_active:
+                    for cat in storage.ids:
+                        lots_ids += _get_lots_by_category(cardinal, cat)
+                else:
+                    lots = cardinal.account.get_user(cardinal.account.id).get_lots()
+                    lots_ids = [(lot.id, lot.description) for lot in lots if lot.subcategory.id in storage.ids]
+        except Exception as e:
+            log(f"Ошибка при получении лотов: {str(e)}", err=1)
+            log(debug=1)
+            return bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при получении лотов</b>\n\n"
+                                                       f"<code>{str(e)}</code>")
+
+        __delete_lots(c, lots_ids)
 
     def clear(c: CallbackQuery):
         storage.clear()
@@ -367,6 +389,12 @@ def init(cardinal: 'C'):
         save_settings()
         bot.edit_message_reply_markup(c.message.chat.id, c.message.id, reply_markup=_main_kb())
 
+    def del_all_lots(c: CallbackQuery):
+        bot.edit_message_text(
+            _accept_del_all_lots_text(), c.message.chat.id, c.message.id, reply_markup=_accept_del_all_lots()
+        )
+
+
     tg.cbq_handler(open_menu, _func(start=CBT.SETTINGS))
     tg.cbq_handler(open_categories, _func(start=f"{CBT.CATEGORY_LIST}:"))
     tg.cbq_handler(add_category_state, _func(start=f"{CBT.CATEGORY_STATE}:"))
@@ -376,6 +404,7 @@ def init(cardinal: 'C'):
     tg.cbq_handler(clear, _func(start=CBT.CLEAR))
     tg.cbq_handler(update_cats, _func(start=f"{CBT.UPDATE_INFO}:"))
     tg.cbq_handler(toggle_settings, _func(start=f"{CBT.TOGGLE}:"))
+    tg.cbq_handler(del_all_lots, _func(start=CBT.DEL_ALL_LOTS))
 
 
 
