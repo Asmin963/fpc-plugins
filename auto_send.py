@@ -194,7 +194,7 @@ def _chat_text(c: Chat):
 
 def _remove_text_kb(c: Chat):
     k = K(row_width=1)\
-        .add(*[B(m[:20], None, f"{CBT.REMOVE_TEXT}:{c.id}:{i}") for i, m in enumerate(c.msgs)])\
+        .add(*[B(m[:70], None, f"{CBT.REMOVE_TEXT}:{c.id}:{i}") for i, m in enumerate(c.msgs)])\
         .row(B("◀️ Назад", None, f"{CBT.OPEN_CHAT}:{c.id}"))
     return k
 
