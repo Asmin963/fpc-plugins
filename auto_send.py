@@ -1,6 +1,7 @@
 import base64
 import json
 import os.path
+import random
 import string
 import time
 from datetime import datetime
@@ -30,8 +31,8 @@ LOGGER_PREFIX = "[AutoSend]"
 logger = getLogger(f"FPC.AutoSend")
 
 
-def log(msg, lvl: str = "info", **kwargs):
-    return getattr(logger, lvl)(f"{LOGGER_PREFIX} {msg}", **kwargs)
+def log(m, lvl: str = "info", **kwargs):
+    return getattr(logger, lvl)(f"{LOGGER_PREFIX} {m}", **kwargs)
 
 
 NAME = "Auto Send Chat"
@@ -71,12 +72,13 @@ class Chat(BaseModel):
     id: str = None
     chat_id: Optional[str] = None
     on: bool = False
-    text: Optional[str] = None
+    msgs: list[str] = []
     name: Optional[str] = None
     interval: int = 3600
     last_send: Optional[str] = None
     notification: bool = False
     remain_send: Optional[int] = None
+    send_random: bool = False
 
 
 class Settings(BaseModel):
@@ -97,7 +99,7 @@ class Settings(BaseModel):
         return next((c for c in self.chats if c.id == item), None)
 
     def new(self, name, text, chat_id):
-        chat = Chat(id=self._id(), text=text, chat_id=chat_id, name=name)
+        chat = Chat(id=self._id(), msgs=[text], chat_id=chat_id, name=name)
         self.chats.append(chat)
         save_settings()
         return chat
@@ -111,7 +113,8 @@ class CBT:
     EDIT_INTERVAL = 'edit-interval'
     EDIT_NAME = 'edit-name'
     REMOVE = 'remove'
-    EDIT_TEXT = 'edit-text'
+    REMOVE_TEXT = 'remove-text'
+    ADD_TEXT = 'add-text'
     SEND = 'send-newsletter'
     EDIT_REMAIN = 'edit-remain'
     SETTINGS_PLUGIN = f"{_CBT.PLUGIN_SETTINGS}:{UUID}"
@@ -135,14 +138,16 @@ def _main_kb():
 def _chat_kb(c: Chat):
     k = K().row(B(f'{_is_on(c.on)} Статус рассылки', None, f"{CBT.TOGGLE_CHAT}:{c.id}:on"))
     k.row(B(f'🕔 Интервал: {time_to_str(c.interval)}', None, f"{CBT.EDIT_INTERVAL}:{c.id}"))
-    k.row(B("💬 Изменить текст рассылки", None, f"{CBT.EDIT_TEXT}:{c.id}"))
+    k.row(B("➕ Добавить", None, f"{CBT.ADD_TEXT}:{c.id}"),
+          B("➖ Удалить", None, f"{CBT.REMOVE_TEXT}:{c.id}"))
     k.row(B(f"{'🔔' if c.notification else '🔕'} Уведомлять об отправке", None,
             f"{CBT.TOGGLE_CHAT}:{c.id}:notification"))
     k.row(B("📤 Отправить сейчас", None, f"{CBT.SEND}:{c.id}"))
     k.row(B("✏️ Название", None, f"{CBT.EDIT_NAME}:{c.id}"),
           B("🗑 Удалить", None, f"{CBT.REMOVE}:{c.id}"))
+    k.row(B(f"{_is_on(c.send_random)} Отправлять рандомно", None, f"{CBT.TOGGLE_CHAT}:{c.id}:send_random"))
     p = str(c.remain_send) if c.remain_send is not None else 'Нет'
-    k.row(B(f"📆 Осталось отправить: {p}", None, f"{CBT.EDIT_REMAIN}:{c.id}"))
+    k.row(B(f"📆 Отправить еще (кол-во раз) - {p}", None, f"{CBT.EDIT_REMAIN}:{c.id}"))
     k.row(B("◀️ Назад", None, f"{CBT.SETTINGS_PLUGIN}:0"))
     return k
 
@@ -160,15 +165,38 @@ def _main_text():
 
 BASE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+from tg_bot import keyboards
+
+orig_kb = keyboards.edit_plugin
+
+def new(c, uuid, offset=0, ask_to_delete=False):
+    kb = orig_kb(c, uuid, offset, ask_to_delete)
+    if uuid == UUID:
+        kb.keyboard[0] = [B("🐹 Разработчик", f"https://t.me/{CREDITS[1:]}")]
+    return kb
+
+keyboards.edit_plugin = new
 
 def _chat_text(c: Chat):
-    return f"""💬 Настройки шаблона «<b>{c.name}</b>»
+    msgs = ('\n\n'.join([f"• <code>{m}</code>" for m in c.msgs]) if c.send_random else f"• <code>{c.msgs[0]}</code>") \
+        if c.msgs else 'Сообщений нет'
+    post = '\n⚠️ Отправляться будет только первое сообщение. Чтобы выбирался один текст из списка, включите параметр "Отправлять рандомно"\n' \
+         if (len(c.msgs) > 1 and not c.send_random) else ''
+    return f"""📢 Настройки шаблона «<b>{c.name}</b>»
     
-• <b>Текст сообщения: </b>
-<code>{c.text}</code>
+💬 <b>Список сообщений: </b>
+{msgs}
+{post}
+🆔 ID чата: <code>{c.chat_id}</code>
 
-• Время последеней рассылки: <code>{datetime.fromisoformat(c.last_send).strftime(BASE_TIME_FORMAT) if c.last_send else 'Не отправлялся'}</code>
+🕓 Время последеней рассылки: <code>{datetime.fromisoformat(c.last_send).strftime(BASE_TIME_FORMAT) if c.last_send else 'Не отправлялся'}</code>
 """
+
+def _remove_text_kb(c: Chat):
+    k = K(row_width=1)\
+        .add(*[B(m[:20], None, f"{CBT.REMOVE_TEXT}:{c.id}:{i}") for i, m in enumerate(c.msgs)])\
+        .row(B("◀️ Назад", None, f"{CBT.OPEN_CHAT}:{c.id}"))
+    return k
 
 def _state_kb():
     return K().add(B("❌ Отменить", None, f"{_CBT.CLEAR_STATE}"))
@@ -272,22 +300,23 @@ def init(cardinal: 'Cardinal'):
         _id = c.data.split(":")[-1]
         ch = s[_id]
         try:
-            try_send(ch, cardinal)
+            try_send(ch, cardinal, manually_send=True)
         except Exception as e:
             bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при отправке рассылки</b>\n\n<code>{str(e)}</code>")
+            logger.debug("TRACEBACK", exc_info=True)
         else:
             if not ch.notification:
                 bot.send_message(c.message.chat.id, f"✅ Рассылка <b>{ch.name}</b> отправлена!")
         bot.answer_callback_query(c.id)
 
     def act_edit_text(c: CallbackQuery):
-        _send_state(c.message.chat.id, c.from_user.id, CBT.EDIT_TEXT, f"✍️ <b>Отправь новый текст рассылки</b>",
+        _send_state(c.message.chat.id, c.from_user.id, CBT.ADD_TEXT, f"✍️ <b>Отправь новый текст рассылки</b>",
                     {"id": c.data.split(":")[-1]}, c=c)
 
     def edit_text(m: Message):
         _id, text = tg.get_state(m.chat.id, m.from_user.id)['data']['id'], m.text
         c = s[_id]
-        c.text = text
+        c.msgs.append(m.text)
         save_settings()
         tg.clear_state(m.chat.id, m.from_user.id, True)
         bot.send_message(m.chat.id, _chat_text(c), reply_markup=_chat_kb(c))
@@ -310,6 +339,20 @@ def init(cardinal: 'Cardinal'):
         tg.clear_state(m.chat.id, m.from_user.id, True)
         bot.send_message(m.chat.id, _chat_text(c), reply_markup=_chat_kb(c))
 
+    def remove_text_menu(c: CallbackQuery):
+        _id = c.data.split(":")[-1]
+        bot.edit_message_text(
+            f"<b>Выбери текст, который хочешь удалить</b>",
+            c.message.chat.id, c.message.id,
+            reply_markup=_remove_text_kb(s[_id])
+        )
+
+    def remove_text(c: CallbackQuery):
+        _id, idx = c.data.split(":")[1:]
+        ch = s[_id]; del ch.msgs[int(idx)]
+        save_settings()
+        bot.edit_message_text(_chat_text(ch), c.message.chat.id, c.message.id, reply_markup=_chat_kb(ch))
+
     start_loop(cardinal)
 
     tg.cbq_handler(open_menu, _start(f"{CBT.SETTINGS_PLUGIN}:"))
@@ -326,10 +369,12 @@ def init(cardinal: 'Cardinal'):
     tg.msg_handler(edit_interval, content_types=['text'], func=lambda m: _cs(m, f"{CBT.EDIT_INTERVAL}"))
     tg.cbq_handler(remove, _start(f"{CBT.REMOVE}:"))
     tg.cbq_handler(send_, _start(f"{CBT.SEND}:"))
-    tg.cbq_handler(act_edit_text, _start(f"{CBT.EDIT_TEXT}:"))
-    tg.msg_handler(edit_text, func=lambda m: _cs(m, CBT.EDIT_TEXT), content_types=['text'])
+    tg.cbq_handler(act_edit_text, _start(f"{CBT.ADD_TEXT}:"))
+    tg.msg_handler(edit_text, func=lambda m: _cs(m, CBT.ADD_TEXT), content_types=['text'])
     tg.cbq_handler(act_edit_remain, _start(f"{CBT.EDIT_REMAIN}:"))
     tg.msg_handler(edit_remain, func=lambda m: _cs(m, f"{CBT.EDIT_REMAIN}"), content_types=['text'])
+    tg.cbq_handler(remove_text_menu, func=lambda c: _start(CBT.REMOVE_TEXT)(c) and len(c.data.split(":")) == 2)
+    tg.cbq_handler(remove_text, func=lambda c: _start(CBT.REMOVE_TEXT)(c) and len(c.data.split(":")) == 3)
 
 
 def pre_init():
@@ -344,14 +389,14 @@ def pre_init():
         except:
             continue
 
-def notification(ch: Chat, c: 'Cardinal'):
+def notification(ch: Chat, text, c: 'Cardinal'):
     tg = c.telegram
     try:
         for user in tg.authorized_users:
             tg.bot.send_message(
                 user, f"📢 Рассылка «<b>{ch.id}</b>» отправлена в чат «<code>{ch.chat_id}</code>»\n\n"
                       f"• <b>Текст сообщения</b>\n"
-                      f"<code>{ch.text}</code>",
+                      f"<code>{text}</code>",
                 reply_markup=K().add(B("💬 Перейти в чат", f"https://funpay.com/chat/?node={ch.chat_id}"))
             )
     except Exception as e:
@@ -360,16 +405,18 @@ def notification(ch: Chat, c: 'Cardinal'):
 
 __started = pre_init()
 
-def try_send(chat: Chat, c: 'Cardinal', notific=False):
+def try_send(chat: Chat, c: 'Cardinal', manually_send: bool = False, notific=False):
     def _kb():
         return K().add(B("⚙️ Настройки рассылки", None, f"{CBT.OPEN_CHAT}:{chat.id}"))
 
-    if not chat.on:
+    log(f"{chat.msgs, chat.remain_send, chat.on}")
+    if (chat.remain_send is not None and chat.remain_send <= 0) or not chat.on or not chat.msgs:
         return
-    if chat.remain_send is not None and chat.remain_send <= 0:
-        return
-    if not chat.last_send or (datetime.now() - datetime.fromisoformat(chat.last_send)).total_seconds() >= chat.interval:
-        result = c.send_message(chat.chat_id, chat.text, watermark=False)
+
+    if manually_send or (not chat.last_send or (datetime.now() - datetime.fromisoformat(chat.last_send)).total_seconds() >= chat.interval):
+        log('go send')
+        text = chat.msgs[0] if not chat.send_random else random.choice(chat.msgs)
+        result = c.send_message(chat.chat_id, text, watermark=False)
         if result is None:
             for i in c.telegram.authorized_users:
                 return c.telegram.bot.send_message(
@@ -384,7 +431,7 @@ def try_send(chat: Chat, c: 'Cardinal', notific=False):
                 notific = True
         save_settings()
         if chat.notification:
-            notification(chat, c)
+            notification(chat, text, c)
         if notific:
             for i in c.telegram.authorized_users:
                 c.telegram.bot.send_message(
