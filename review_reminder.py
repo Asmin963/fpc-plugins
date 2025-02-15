@@ -55,7 +55,7 @@ def _get_new_plugin_content() -> str | None:
         "https://raw.githubusercontent.com/Asmin963/fpc-plugins/refs/heads/main/review_reminder.py"
     )
     if response.status_code != 200:
-        logger.error("Ошибка при получении новой версии плагина. Ответ сервера: ")
+        log("Ошибка при получении новой версии плагина. Ответ сервера в логе")
         logger.debug(response.text)
         return None
     return response.text
@@ -72,7 +72,7 @@ def _update_plugin():
         NEW_VERSION = False
         return True
     except Exception as e:
-        logger.error(f"Ошибка при обновлении плагина: {str(e)}")
+        log(f"Ошибка при обновлении плагина: {str(e)}")
         logger.debug("TRACEBACK", exc_info=True)
         return False
 
@@ -81,7 +81,19 @@ with open(__file__, encoding='utf-8') as f:
     CONTENT = f.read()
 
 
-def start_updater():
+def _notification_new_version_plugin(c: 'Cardinal'):
+    try:
+        for user in c.telegram.authorized_users:
+            c.telegram.bot.send_message(
+                user, f"🎉 Доступна новая версия плагина «<b>{NAME}</b>»\n\n"
+                      f" - Используй кнопку ниже, чтобы загрузить",
+                reply_markup=K().add(B("🔄 Обновить плагин", None, f"{CBT.UPDATE_PLUGIN}"))
+            )
+    except Exception as e:
+        log(f"Ошибка при оповещении об новой версии плагина: {str(e)}")
+        logger.debug("TRACEBACK", exc_info=True)
+
+def start_updater(cardinal: 'Cardinal'):
     def run():
         global NEW_VERSION
         while True:
@@ -90,8 +102,10 @@ def start_updater():
                 time.sleep(500)
                 continue
             if new != CONTENT:
-                NEW_VERSION = True
-                log("Доступна новая версия плагина!!")
+                if not NEW_VERSION:
+                    NEW_VERSION = True
+                    log("Доступна новая версия плагина!!")
+                    _notification_new_version_plugin(cardinal)
             time.sleep(500)
 
     Thread(target=run).start()
@@ -104,25 +118,25 @@ old_kb = keyboards.edit_plugin
 def new_kb(c, uuid, offset, ask_to_delete=False):
     kb = old_kb(c, uuid, offset, ask_to_delete=ask_to_delete)
     if uuid == UUID and NEW_VERSION:
-        kb.keyboard.insert(0, [B("🥳 Скачать новую версию", None, CBT.UPDATE_PLUGIN)])
+        kb.keyboard.insert(0, [B("🥳 Доступна новая версия!", None, CBT.UPDATE_PLUGIN)])
     return kb
 
 
 keyboards.edit_plugin = new_kb
 
 
-def _get_path(f):
+def _get_path(_f):
     return os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", "review_reminder",
-                        f if "." in f else f + ".json")
+                        _f if "." in _f else _f + ".json")
 
 
 os.makedirs(os.path.join(os.path.dirname(__file__), "..", "storage", "plugins", "review_reminder"), exist_ok=True)
 
 
-def _load(_path):
-    if not os.path.exists(_path):
+def _load(path):
+    if not os.path.exists(path):
         return {}
-    with open(_path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -396,7 +410,10 @@ def init(cardinal: 'Cardinal'):
         if not result:
             return bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при обновлении плагина</b>")
         bot.send_message(c.message.chat.id, f"✅ Плагин успешно обновлён!\n\n"
-                                            "Используй команду - /restart")
+                                            "Используй команду - /restart",
+                         reply_markup=K().add(B("👨🏼‍💻 Github-репозиторий с плагинами",
+                                                'https://github.com/Asmin963/fpc-plugins')))
+        bot.answer_callback_query(c.id)
 
     tg.cbq_handler(lambda c: open_menu(c=c), _func(CBT.SETTINGS_PLUGIN))
     tg.cbq_handler(toggle_setting, _func(CBT.TOGGLE))
@@ -425,6 +442,7 @@ def init(cardinal: 'Cardinal'):
     tg.cbq_handler(update_plugin, _func(CBT.UPDATE_PLUGIN))
 
     start_checker_loop(cardinal)
+    start_updater(cardinal)
 
 
 def pre_init():
@@ -512,8 +530,6 @@ def order_state_changed(c: 'Cardinal', e: OrderStatusChangedEvent):
                 o.is_ignore = True
                 save_orders()
                 log(f"Заказ #{e.order.id} возвращен. Добавил его в список для игнора")
-
-start_updater()
 
 BIND_TO_PRE_INIT = [init]
 BIND_TO_ORDER_STATUS_CHANGED = [order_state_changed]
