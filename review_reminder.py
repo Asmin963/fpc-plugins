@@ -409,7 +409,9 @@ def init(cardinal: 'Cardinal'):
         result = _update_plugin()
         if not result:
             return bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при обновлении плагина</b>")
-        bot.send_message(c.message.chat.id, f"✅ Плагин успешно обновлён!\n\n"
+        if result == -1:
+            return bot.send_message(c.message.chat.id, f"😢 <b>Новых версий не найдено!</b>")
+        bot.send_message(c.message.chat.id, f"✅ <b>Плагин успешно обновлён!</b>\n\n"
                                             "Используй команду - /restart",
                          reply_markup=K().add(B("👨🏼‍💻 Плагины на Github",
                                                 'https://github.com/Asmin963/fpc-plugins')))
