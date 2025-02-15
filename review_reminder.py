@@ -36,7 +36,7 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.3"
+VERSION = "0.0.1"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
@@ -97,7 +97,7 @@ def start_updater(cardinal: 'Cardinal'):
             if not new:
                 time.sleep(500)
                 continue
-            new_version = next((i.split("=")[-1].strip()[1:-1] for i in new.split("\n") if i.startswith('VERSION')), None)
+            new_version = next((i.split("=")[-1].strip()[1:-1] for i in new.split("\n") if i.startswith('VERSION = ')), None)
             if new_version != VERSION:
                 if not NEW_VERSION:
                     NEW_VERSION = True
@@ -108,6 +108,8 @@ def start_updater(cardinal: 'Cardinal'):
                         NEW_VERSION = False
                     else:
                         log("Ошибка при обновлении плагина.")
+            else:
+                log(f"Текущая версия плагина: {VERSION}. Версия на гитхабе: {new_version}")
             time.sleep(500)
 
     Thread(target=run).start()
@@ -514,7 +516,7 @@ def new_msg(c: 'Cardinal', e: NewMessageEvent):
             return
         order = c.account.get_order(order_id)
         stars = order.review.stars
-        if stars >= s.ignore_reviews_less_than:
+        if stars < s.ignore_reviews_less_than:
             log(f"Оставлен отзыв на заказ #{order.id}. Оценка: {stars}. Игнорирую этот отзыв, так как он ниже чем {s.ignore_reviews_less_than}")
             return
         _order.is_ignore = True
