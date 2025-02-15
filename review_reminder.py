@@ -36,7 +36,7 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
@@ -97,7 +97,7 @@ def start_updater(cardinal: 'Cardinal'):
             if not new:
                 time.sleep(500)
                 continue
-            new_version = next((i.split("=")[-1].strip() for i in new.split("\n") if i.startswith('VERSION')), None)
+            new_version = next((i.split("=")[-1].strip()[1:-1] for i in new.split("\n") if i.startswith('VERSION')), None)
             if new_version != VERSION:
                 if not NEW_VERSION:
                     NEW_VERSION = True
