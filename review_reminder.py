@@ -95,7 +95,7 @@ def _notification_new_version_plugin(c: 'Cardinal'):
 
 def start_updater(cardinal: 'Cardinal'):
     def run():
-        global NEW_VERSION
+        global NEW_VERSION, CONTENT
         while True:
             new = _get_new_plugin_content()
             if not new:
@@ -106,6 +106,13 @@ def start_updater(cardinal: 'Cardinal'):
                     NEW_VERSION = True
                     log("Доступна новая версия плагина!!")
                     _notification_new_version_plugin(cardinal)
+                    if _update_plugin():
+                        log("Плагин успешно обновлен.")
+                        with open(__file__, encoding='utf-8') as _f:
+                            CONTENT = _f.read()
+                        NEW_VERSION = False
+                    else:
+                        log("Ошибка при обновлении плагина.")
             time.sleep(500)
 
     Thread(target=run).start()
