@@ -64,6 +64,9 @@ class Settings(BaseModel):
     interval: int = 43200
     attempts: int = 3
     ignore_reviews_less_than: int = 4
+    ignore_list: list[str] = []
+    min_amount: float = 1.0
+    max_amount: float = 100000.0
 
 
 class Order(BaseModel):
@@ -93,6 +96,10 @@ class CBT:
     EDIT_INTERVAL = 'EDIT-INT'
     EDIT_ATTEMPTS = 'EDIT-ATTEMPTS'
     EDIT_IRLT = 'EDIT-IRLT'
+    OPEN_IGNORE_LIST = 'OPEN-IGNORE-LIST'
+    REMOVE_IGNORE_LIST = 'REMOVE-IGNORE-LIST'
+    ADD_TO_IGNORE_LIST = 'ADD_TO_IGNORE_LIST'
+    EDIT_AMOUNT_LIMIT = 'EDIT-AMOUNT-LIMIT'
 
 s = SETTINGS
 
@@ -108,6 +115,9 @@ def _main_kb():
                B("➖ Удалить", None, CBT.REMOVE_MSG))
         kb.row(B(f"🕓 Интервал: {time_to_str(s.interval)}", None, CBT.EDIT_INTERVAL))
         kb.row(B(f"📤 Кол-во отправок: {s.attempts}", None, CBT.EDIT_ATTEMPTS))
+        kb.row(B(f"Мин. цена: {s.min_amount}", None, f"{CBT.EDIT_AMOUNT_LIMIT}:min"),
+               B(f"Макс. цена: {s.max_amount}", None, f"{CBT.EDIT_AMOUNT_LIMIT}:max"))
+        kb.row(B("⛔️ Открыть игнор-лист", None, CBT.OPEN_IGNORE_LIST))
     kb.row(B(f'{_is_on(s.on)} Напоминать об отзыве', None, f"{CBT.TOGGLE}:on"))
     kb.row(B('◀️ Назад', None, f"{_CBT.EDIT_PLUGIN}:{UUID}:0"))
     return kb
@@ -122,6 +132,17 @@ def _main_text():
 {msgs}
 {post}
 """
+
+def _ignore_list_kb():
+    return K().add(
+        B("➕ Добавить", None, CBT.ADD_TO_IGNORE_LIST),
+        B('➖ Удалить', None, CBT.REMOVE_IGNORE_LIST)
+    ).row(B('◀️ Назад', None, CBT.SETTINGS_PLUGIN))
+
+def _ignore_list_text():
+    return f"""⛔️ <b>Список пользователей, заказы которых будут проигнорированы:</b>
+
+{', '.join([f"<code>{user}</code>" for user in s.ignore_list]) if s.ignore_list else '- Список пуст'}"""
 
 def _delete_msgs():
     return K(row_width=1).add(
@@ -211,6 +232,55 @@ def init(cardinal: 'Cardinal'):
             return bot.send_message(m.chat.id, f"❌ Ты должен отправить число в диапазоне от 1 до 5!")
         s.ignore_reviews_less_than = i; save_settings(); tg.clear_state(m.chat.id, m.from_user.id, True); open_menu(m.chat.id)
 
+    def open_ignore_list(chat_id=None, c=None):
+        if chat_id:
+            bot.send_message(chat_id, _ignore_list_text(), reply_markup=_ignore_list_kb())
+        else:
+            _edit_msg(c.message, _ignore_list_text(), _ignore_list_kb())
+
+    def act_del_or_add_user(c: CallbackQuery):
+        arg = 'add' if c.data == CBT.ADD_TO_IGNORE_LIST else 'del'
+        _send_state(
+            c.message.chat.id, c.from_user.id, f"Отправь мне ник юзера, которого надо "
+            f"{'удалить из игнор-листа' if arg == 'del' else 'добавить в игнор-лист'}", 'del-or-add-ignore-list', {"arg": arg}, c=c
+        )
+
+    def del_or_add_ignore_list(m: Message):
+        arg = tg.get_state(m.chat.id, m.from_user.id)['data']['arg']
+        user = m.text
+        if arg == 'add':
+            if user in s.ignore_list:
+                bot.send_message(m.chat.id, f"❌ Пользователь <code>{user}</code> уже в игнор листе")
+            else:
+                s.ignore_list.append(user)
+                save_settings()
+        else:
+            if user not in s.ignore_list:
+                bot.send_message(m.chat.id, f"❌ Пользователя <code>{user}</code> нет в игнор-листе")
+            else:
+                s.ignore_list.remove(user)
+                save_settings()
+        tg.clear_state(m.chat.id, m.from_user.id, True)
+        open_ignore_list(m.chat.id)
+
+    def act_edit_amount_limit(c: CallbackQuery):
+        arg = c.data.split(":")[-1]
+        _send_state(
+            c.message.chat.id, c.from_user.id, f"Отправь мне новую {'мин' if arg == 'min' else 'макс'}имальную сумму заказа, на который будет реагировать плагин",
+            CBT.EDIT_AMOUNT_LIMIT, {"arg": arg}, c=c
+        )
+
+    def edit_amount_limit(m: Message):
+        try:
+            a = float(m.text)
+        except ValueError:
+            return bot.send_message(m.chat.id, f"❌ Ты должен отправить число!")
+        arg = tg.get_state(m.chat.id, m.from_user.id)['data']['arg']
+        setattr(s, f"{arg}_amount", a)
+        save_settings()
+        tg.clear_state(m.chat.id, m.from_user.id, True)
+        open_menu(m.chat.id)
+
     tg.cbq_handler(lambda c: open_menu(c=c), _func(CBT.SETTINGS_PLUGIN))
     tg.cbq_handler(toggle_setting, _func(CBT.TOGGLE))
 
@@ -226,6 +296,14 @@ def init(cardinal: 'Cardinal'):
 
     tg.cbq_handler(act_edit_irlt, _func(CBT.EDIT_IRLT))
     tg.msg_handler(edit_irlt, func=_state(CBT.EDIT_IRLT))
+
+    tg.cbq_handler(act_edit_amount_limit, _func(CBT.EDIT_AMOUNT_LIMIT))
+    tg.msg_handler(edit_amount_limit, func=_state(CBT.EDIT_AMOUNT_LIMIT))
+
+    tg.cbq_handler(act_del_or_add_user, lambda c: c.data in (CBT.REMOVE_IGNORE_LIST, CBT.ADD_TO_IGNORE_LIST))
+    tg.msg_handler(del_or_add_ignore_list, func=_state('del-or-add-ignore-list'))
+
+    tg.cbq_handler(lambda c: open_ignore_list(c=c), _func(CBT.OPEN_IGNORE_LIST))
 
     start_checker_loop(cardinal)
 
@@ -299,7 +377,7 @@ def new_msg(c: 'Cardinal', e: NewMessageEvent):
 
 
 def order_state_changed(c: 'Cardinal', e: OrderStatusChangedEvent):
-    if e.order.status == OrderStatuses.CLOSED:
+    if e.order.status == OrderStatuses.CLOSED and s.min_amount <= e.order.price <= s.max_amount and e.order.buyer_username not in s.ignore_list: 
         order = Order(id=e.order.id, buyer=e.order.buyer_username, chat_id=e.order.chat_id)
         ORDERS.append(order)
         save_orders()
