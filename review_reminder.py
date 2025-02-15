@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from logging import getLogger
 from threading import Thread
-from typing import Optional
+from typing import Optional, Any
 
 import requests
 from pip._internal.cli.main import main
@@ -36,12 +36,12 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
 SETTINGS_PAGE = True
-CONTENT = None
+CONTENT: Any = None
 
 SETTINGS: Optional['Settings'] = None
 
@@ -77,15 +77,11 @@ def _update_plugin():
         return False
 
 
-with open(__file__, encoding='utf-8') as f:
-    CONTENT = f.read()
-
-
-def _notification_new_version_plugin(c: 'Cardinal'):
+def _notification_new_version_plugin(c: 'Cardinal', new_version: str):
     try:
         for user in c.telegram.authorized_users:
             c.telegram.bot.send_message(
-                user, f"🎉 Доступна новая версия плагина «<b>{NAME}</b>»\n\n"
+                user, f"🎉 Доступна новая версия плагина «<b>{NAME}</b>» - <b>{new_version}</b>\n\n"
                       f" - Используй кнопку ниже, чтобы загрузить",
                 reply_markup=K().add(B("🔄 Обновить плагин", None, f"{CBT.UPDATE_PLUGIN}"))
             )
@@ -101,15 +97,14 @@ def start_updater(cardinal: 'Cardinal'):
             if not new:
                 time.sleep(500)
                 continue
-            if new != CONTENT:
+            new_version = next((i.split("=")[-1].strip() for i in new.split("\n") if i.startswith('VERSION')), None)
+            if new_version != VERSION:
                 if not NEW_VERSION:
                     NEW_VERSION = True
-                    log("Доступна новая версия плагина!!")
-                    _notification_new_version_plugin(cardinal)
+                    log(f"Доступна новая версия плагина!! - {new_version}")
+                    _notification_new_version_plugin(cardinal, new_version)
                     if _update_plugin():
                         log("Плагин успешно обновлен.")
-                        with open(__file__, encoding='utf-8') as _f:
-                            CONTENT = _f.read()
                         NEW_VERSION = False
                     else:
                         log("Ошибка при обновлении плагина.")
