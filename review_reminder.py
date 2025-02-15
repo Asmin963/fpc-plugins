@@ -55,7 +55,7 @@ def _get_new_plugin_content() -> str | None:
         "https://raw.githubusercontent.com/Asmin963/fpc-plugins/refs/heads/main/review_reminder.py"
     )
     if response.status_code != 200:
-        log("Ошибка при получении новой версии плагина. Ответ сервера в логе")
+        logger.error("Ошибка при получении новой версии плагина. Ответ сервера: ")
         logger.debug(response.text)
         return None
     return response.text
@@ -72,7 +72,7 @@ def _update_plugin():
         NEW_VERSION = False
         return True
     except Exception as e:
-        log(f"Ошибка при обновлении плагина: {str(e)}")
+        logger.error(f"Ошибка при обновлении плагина: {str(e)}")
         logger.debug("TRACEBACK", exc_info=True)
         return False
 
@@ -90,7 +90,7 @@ def _notification_new_version_plugin(c: 'Cardinal'):
                 reply_markup=K().add(B("🔄 Обновить плагин", None, f"{CBT.UPDATE_PLUGIN}"))
             )
     except Exception as e:
-        log(f"Ошибка при оповещении об новой версии плагина: {str(e)}")
+        logger.error(f"Ошибка при оповещении об новой версии плагина: {str(e)}")
         logger.debug("TRACEBACK", exc_info=True)
 
 def start_updater(cardinal: 'Cardinal'):
@@ -411,7 +411,7 @@ def init(cardinal: 'Cardinal'):
             return bot.send_message(c.message.chat.id, f"❌ <b>Ошибка при обновлении плагина</b>")
         bot.send_message(c.message.chat.id, f"✅ Плагин успешно обновлён!\n\n"
                                             "Используй команду - /restart",
-                         reply_markup=K().add(B("👨🏼‍💻 Github-репозиторий с плагинами",
+                         reply_markup=K().add(B("👨🏼‍💻 Плагины на Github",
                                                 'https://github.com/Asmin963/fpc-plugins')))
         bot.answer_callback_query(c.id)
 
