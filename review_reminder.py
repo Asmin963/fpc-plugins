@@ -36,7 +36,7 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.1"
+VERSION = "0.0.4"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
