@@ -36,7 +36,7 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.4"
+VERSION = "0.0.5"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
@@ -227,7 +227,7 @@ def _main_kb():
 
 
 def _main_text():
-    msgs = '\n'.join([f" • <code>{m}</code>" for m in s.msgs]) if s.random else f" • <code>{s.msgs[0]}</code>"
+    msgs = '\n'.join([f" • <code>{m}</code>" for m in s.msgs]) if s.random else f" • <code>{s.msgs[0] if s.msgs else 'Список пуст'}</code>"
     post = f"\n⚠️ Будет отправляться только одно сообщение, так как выключен параметр «<b>Отправлять рандомно</b>»" \
         if (not s.random and len(s.msgs) > 1) else ''
     return f"""⚙️ Настройки плагина «<b>{NAME}</b>»
