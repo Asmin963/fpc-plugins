@@ -36,7 +36,7 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.5"
+VERSION = "0.0.6"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
@@ -89,6 +89,7 @@ def _notification_new_version_plugin(c: 'Cardinal', new_version: str):
         logger.error(f"Ошибка при оповещении об новой версии плагина: {str(e)}")
         logger.debug("TRACEBACK", exc_info=True)
 
+
 def start_updater(cardinal: 'Cardinal'):
     def run():
         global NEW_VERSION, CONTENT
@@ -97,7 +98,8 @@ def start_updater(cardinal: 'Cardinal'):
             if not new:
                 time.sleep(500)
                 continue
-            new_version = next((i.split("=")[-1].strip()[1:-1] for i in new.split("\n") if i.startswith('VERSION = ')), None)
+            new_version = next((i.split("=")[-1].strip()[1:-1] for i in new.split("\n") if i.startswith('VERSION = ')),
+                               None)
             if new_version != VERSION:
                 if not NEW_VERSION:
                     NEW_VERSION = True
@@ -227,7 +229,8 @@ def _main_kb():
 
 
 def _main_text():
-    msgs = '\n'.join([f" • <code>{m}</code>" for m in s.msgs]) if s.random else f" • <code>{s.msgs[0] if s.msgs else 'Список пуст'}</code>"
+    msgs = '\n'.join([f" • <code>{m}</code>" for m in
+                      s.msgs]) if s.random else f" • <code>{s.msgs[0] if s.msgs else 'Список пуст'}</code>"
     post = f"\n⚠️ Будет отправляться только одно сообщение, так как выключен параметр «<b>Отправлять рандомно</b>»" \
         if (not s.random and len(s.msgs) > 1) else ''
     return f"""⚙️ Настройки плагина «<b>{NAME}</b>»
@@ -511,6 +514,7 @@ def new_msg(c: 'Cardinal', e: NewMessageEvent):
             order_id = order_id[:-1]
         if order_id[0] == "#":
             order_id = order_id[1:]
+        log(f"Оставлен отзыв на заказ #{order_id}")
         _order = next((o for o in ORDERS if o.id == order_id), None)
         if not _order:
             return
@@ -528,6 +532,9 @@ def order_state_changed(c: 'Cardinal', e: OrderStatusChangedEvent):
     if e.order.status == OrderStatuses.CLOSED and s.min_amount <= e.order.price <= s.max_amount and e.order.buyer_username not in s.ignore_list:
         order = Order(id=e.order.id, buyer=e.order.buyer_username, chat_id=e.order.chat_id)
         ORDERS.append(order)
+        r = c.account.get_order(e.order.id).review
+        if r and r.stars >= s.ignore_reviews_less_than:
+            order.is_ignore = True
         save_orders()
         log(f"Подтвержден заказ #{e.order.id} от {e.order.buyer_username} в чате {e.order.chat_id}. Готов отправлять напоминания")
     elif e.order.status == OrderStatuses.REFUNDED:
@@ -537,6 +544,8 @@ def order_state_changed(c: 'Cardinal', e: OrderStatusChangedEvent):
                 save_orders()
                 log(f"Заказ #{e.order.id} возвращен. Добавил его в список для игнора")
 
+
 BIND_TO_PRE_INIT = [init]
+BIND_TO_NEW_MESSAGE = [new_msg]
 BIND_TO_ORDER_STATUS_CHANGED = [order_state_changed]
 BIND_TO_DELETE = None
