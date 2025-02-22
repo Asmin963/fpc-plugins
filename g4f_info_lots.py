@@ -79,7 +79,8 @@ def gpt_info_handler(cardinal, e: NewMessageEvent):
                         {"role": "user", "content": prompt}
                     ]
                 )
-                response = '\n'.join([line.strip() for line in response.splitlines() if line.strip()])
+                response = '\n'.join(["".join([f"{char}⁡" for char in line]) for line in response.splitlines() if line.strip()])
+                response = response.translate(str.maketrans("оОаАеЕ", "oOaAeE"))
             except Exception as e:
                 logger.error(f"[{counter}/{5}] Ошибка при генерации ответа от GPT: {str(e)}")
                 logger.debug("TRACEBACK", exc_info=True)
