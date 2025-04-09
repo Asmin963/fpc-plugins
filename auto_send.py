@@ -376,19 +376,6 @@ def init(cardinal: 'Cardinal'):
     tg.cbq_handler(remove_text_menu, func=lambda c: _start(CBT.REMOVE_TEXT)(c) and len(c.data.split(":")) == 2)
     tg.cbq_handler(remove_text, func=lambda c: _start(CBT.REMOVE_TEXT)(c) and len(c.data.split(":")) == 3)
 
-
-def pre_init():
-    for e in ['utf-8', 'windows-1251', 'windows-1252', 'utf-16', 'ansi']:
-        try:
-            c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
-            for i in range(len(ls := (_f := open(__file__, **{"encoding": e})).readlines())):
-                if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
-            with open(__file__, "w") as b:
-                b.writelines(ls); globals()[c.upper()] = '@' + a
-                return 1
-        except:
-            continue
-
 def notification(ch: Chat, text, c: 'Cardinal'):
     tg = c.telegram
     try:
@@ -402,8 +389,6 @@ def notification(ch: Chat, text, c: 'Cardinal'):
     except Exception as e:
         log(f"Ошибка при отправке рассылки в чат {ch.chat_id}: {e}")
         logger.debug("TRACEBACK", exc_info=True)
-
-__started = pre_init()
 
 def try_send(chat: Chat, c: 'Cardinal', manually_send: bool = False, notific=False):
     def _kb():
