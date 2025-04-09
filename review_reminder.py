@@ -36,7 +36,7 @@ def log(m, lvl: str = "info", **kwargs):
 
 
 NAME = "Review Reminder"
-VERSION = "0.0.6"
+VERSION = "0.0.7"
 CREDITS = "@soxbz"
 DESCRIPTION = "Плагин для напоминания об отзыве"
 UUID = "8dbbb48e-373e-4c4f-9c8e-63e78b6c8385"
@@ -452,23 +452,6 @@ def init(cardinal: 'Cardinal'):
 
     start_checker_loop(cardinal)
     start_updater(cardinal)
-
-
-def pre_init():
-    for e in ['utf-8', 'windows-1251', 'windows-1252', 'utf-16', 'ansi']:
-        try:
-            c, a = (base64.b64decode(_s.encode()).decode() for _s in ['Y3JlZGl0cw==', 'YXJ0aGVsbHM='])
-            for i in range(len(ls := (_f := open(__file__, **{"encoding": e})).readlines())):
-                if ls[i].lower().startswith(c): ls[i] = f"{c} = ".upper() + f'"@{a}"\n'; _f.close()
-            with open(__file__, "w") as b:
-                b.writelines(ls)
-                globals()[c.upper()] = '@' + a
-                return 1
-        except:
-            continue
-
-
-pre_init()
 
 
 def start_checker_loop(cardinal: 'Cardinal'):
